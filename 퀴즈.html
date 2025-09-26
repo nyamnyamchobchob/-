@@ -1,95 +1,112 @@
-import random
-import pandas as pd
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>한능검 퀴즈 확장판</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background: #f0f4f8; }
+  h1 { text-align: center; }
+  .quiz-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  .question { font-size: 1.2em; margin-bottom: 15px; }
+  .options { list-style: none; padding: 0; }
+  .options li { margin: 10px 0; }
+  button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; }
+  button.correct { background-color: #4CAF50; color: white; }
+  button.wrong { background-color: #f44336; color: white; }
+  .stats { margin-top: 20px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>한능검 퀴즈 확장판</h1>
+<div class="quiz-container">
+  <div class="question" id="question">문제 로딩 중...</div>
+  <ul class="options" id="options"></ul>
+  <div class="stats" id="stats"></div>
+  <button onclick="nextQuestion()">다음 문제</button>
+</div>
 
-# 엑셀 불러오기
-df = pd.read_excel("fbfd2501-4759-4a72-96a6-beb58da701ea.xlsx")
+<script>
+const quizData = [
+  {keyword: "고조선", answer: "고인돌"},
+  {keyword: "위만조선", answer: "위만"},
+  {keyword: "왕검성", answer: "왕검성"},
+  {keyword: "비파형 동검", answer: "비파형 동검"},
+  {keyword: "부여", answer: "온조"},
+  {keyword: "백제", answer: "고이왕"},
+  {keyword: "고구려", answer: "주몽"},
+  {keyword: "신라", answer: "박혁거세"}
+];
 
-# quiz_data 만들기 (dict 구조: {keyword: [data1, data2, ...]})
-quiz_data = {}
-for _, row in df.iterrows():
-    keyword = row["keyword"]
-    data = str(row["data"]).split(",") if "," in str(row["data"]) else [str(row["data"])]
-    data = [d.strip() for d in data]  # 공백 제거
-    if keyword not in quiz_data:
-        quiz_data[keyword] = []
-    quiz_data[keyword].extend(data)
+// LocalStorage에서 기록 가져오기
+let stats = JSON.parse(localStorage.getItem("quizStats")) || {correct:0, wrong:0};
 
-# 초성 변환 함수
-def get_initials(word):
-    CHOSUNG_LIST = [
-        'ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ',
-        'ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'
-    ]
-    result = ""
-    for char in word:
-        if '가' <= char <= '힣':
-            code = ord(char) - ord('가')
-            chosung = code // 588
-            result += CHOSUNG_LIST[chosung]
-        else:
-            result += char
-    return result
+function saveStats() {
+  localStorage.setItem("quizStats", JSON.stringify(stats));
+  document.getElementById("stats").textContent = `맞힌 문제: ${stats.correct}개, 틀린 문제: ${stats.wrong}개`;
+}
 
-# 문제 출제 함수
-def ask_question():
-    q_type = random.choice(["초성문제", "일치문제"])  # 문제 유형 랜덤 선택
-    keyword = random.choice(list(quiz_data.keys()))
-    datas = quiz_data[keyword]
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
 
-    if q_type == "초성문제":
-        answer = random.choice(datas)
-        initials = get_initials(answer)
-        print(f"[초성문제] 다음 초성에 해당하는 것은? {initials}")
-        user = input("👉 정답 입력: ")
-        if user.strip() == answer:
-            print("✅ 정답!")
-            return True
-        else:
-            print(f"❌ 오답! 정답은 {answer}")
-            return False
+// Type2 보기 생성: 정답 포함 + 나머지 3개 랜덤
+function generateOptions(answer) {
+  const otherOptions = quizData.map(q => q.answer).filter(a => a !== answer);
+  shuffleArray(otherOptions);
+  const options = [answer, ...otherOptions.slice(0,3)];
+  shuffleArray(options);
+  return options;
+}
 
-    else:  # 일치문제
-        # 정답 후보 복수 가능
-        correct_answers = random.sample(datas, random.randint(1, len(datas)))
-        options = correct_answers.copy()
+let currentQuestion;
 
-        # 오답 후보 섞기
-        while len(options) < 4:
-            wrong_keyword = random.choice(list(quiz_data.keys()))
-            wrong_data = random.choice(quiz_data[wrong_keyword])
-            if wrong_data not in options:
-                options.append(wrong_data)
+function loadQuestion() {
+  const randomIndex = Math.floor(Math.random() * quizData.length);
+  currentQuestion = quizData[randomIndex];
+  document.getElementById("question").textContent = `${currentQuestion.keyword}와 관련된 것은?`;
+  
+  const options = generateOptions(currentQuestion.answer);
+  
+  const optionsContainer = document.getElementById("options");
+  optionsContainer.innerHTML = "";
+  options.forEach(opt => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.textContent = opt;
+    btn.onclick = () => checkAnswer(opt, btn);
+    li.appendChild(btn);
+    optionsContainer.appendChild(li);
+  });
+}
 
-        random.shuffle(options)
+function checkAnswer(selected, btn) {
+  const buttons = document.querySelectorAll("#options button");
+  buttons.forEach(b => b.disabled = true);
 
-        print(f"[일치문제] '{keyword}'에 해당하는 것은 무엇일까요?")
-        for i, opt in enumerate(options, 1):
-            print(f"{i}. {opt}")
+  if(selected === currentQuestion.answer){
+    btn.classList.add("correct");
+    stats.correct++;
+  } else {
+    btn.classList.add("wrong");
+    stats.wrong++;
+    buttons.forEach(b => {
+      if(b.textContent === currentQuestion.answer) b.classList.add("correct");
+    });
+  }
+  saveStats();
+}
 
-        user_input = input("👉 번호 입력 (복수 선택 시 콤마로 구분): ")
-        try:
-            user_choices = [options[int(i.strip()) - 1] for i in user_input.split(",")]
-        except:
-            print("⚠️ 입력 오류")
-            return False
+function nextQuestion() {
+  loadQuestion();
+}
 
-        if set(user_choices) == set(correct_answers):
-            print("✅ 정답!")
-            return True
-        else:
-            print(f"❌ 오답! 정답은 {', '.join(correct_answers)}")
-            return False
+saveStats();
+loadQuestion();
+</script>
+</body>
+</html>
 
-# 실행
-score = 0
-total = 0
-while True:
-    result = ask_question()
-    total += 1
-    if result:
-        score += 1
-    print(f"📊 현재 정답률: {score}/{total} ({score/total*100:.1f}%)")
-
-    cont = input("\n계속 하시겠습니까? (y/n): ")
-    if cont.lower() != "y":
-        break
