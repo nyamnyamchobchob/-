@@ -1,12 +1,12 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>한국사 능력검정 퀴즈 (Auto Session Mode)</title>
+<title>한국사 능력검정 퀴즈</title>
 <style>
 :root{--bg:#fbfbfd;--card:#fff;--accent:#0b63d3;--success:#2e7d32;--danger:#c62828}
-html,body{height:100%;margin:0;font-family:Inter, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;background:var(--bg);color:#111}
+html,body{margin:0;padding:0;height:100%;font-family:Inter,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:#111}
 .wrap{max-width:900px;margin:0 auto;padding:18px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 h1{font-size:1.25rem;margin:0}
@@ -17,7 +17,7 @@ button:hover,label.input-btn:hover{filter:brightness(.98);cursor:pointer}
 .kw-btn{min-width:140px;text-align:left;display:flex;flex-direction:column;padding:10px;border-radius:10px;border:1px solid #e6e7ea;background:#fff}
 .kw-title{font-weight:600}
 .kw-stats{font-size:.85rem;color:#666}
-#quiz{margin-top:18px;padding:14px;border-radius:10px;background:var(--card);border:1px solid #e6e7ea;min-height:120px}
+#quiz{margin-top:18px;padding:14px;border-radius:10px;background:var(--card);border:1px solid #e6e7ea;min-height:120px;display:flex;flex-direction:column}
 .question{font-size:1.05rem;margin-bottom:12px}
 .options{display:flex;flex-direction:column;gap:8px}
 .opt{padding:8px 10px;border-radius:8px;border:1px solid #ddd;background:#fff;display:flex;align-items:center}
@@ -30,6 +30,8 @@ button:hover,label.input-btn:hover{filter:brightness(.98);cursor:pointer}
 .center{display:flex;gap:8px;flex-wrap:wrap}
 #backBtn{background:#999;color:#fff;border:none;padding:6px 12px;border-radius:6px;}
 @media (max-width:480px){.kw-btn{min-width:48%;font-size:.95rem}.controls{flex-direction:column;align-items:stretch}button,label.input-btn{width:100%}}
+.next-btn{background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:1rem;cursor:pointer;margin-top:12px;align-self:flex-start;transition:all 0.2s ease}
+.next-btn:hover{filter:brightness(0.9);}
 </style>
 </head>
 <body>
@@ -48,7 +50,7 @@ button:hover,label.input-btn:hover{filter:brightness(.98);cursor:pointer}
 
 <main>
   <div id="menu"></div>
-  <div id="quiz" style="display:none"></div>
+  <div id="quiz"></div>
   <div class="meta">
     <div id="currentKeyword" class="small"></div>
     <div id="progress" class="small"></div>
@@ -57,64 +59,34 @@ button:hover,label.input-btn:hover{filter:brightness(.98);cursor:pointer}
 </main>
 
 <footer>
-  <div>데이터 파일 포맷: JSON (권장) 또는 CSV(간단지원). CSV 예: <span class="kbd">고조선,고인돌|비파형 동검|위만조선</span></div>
+  <div>데이터 파일 포맷: JSON 또는 CSV. 예: <span class="kbd">고조선,고인돌|비파형 동검|위만조선</span></div>
 </footer>
 </div>
 
 <script>
-// ---------------------------- 기본 데이터 ----------------------------
-const DEFAULT_DATA = [
-  { keyword: "고조선", data: ["고인돌", "비파형 동검", "위만조선", "우거왕", "왕검성"] },
-  { keyword: "삼국시대", data: ["고구려", "백제", "신라", "광개토대왕", "근초고왕"] },
-  { keyword: "조선시대", data: ["세종대왕", "훈민정음", "붕당", "영정법", "사화"] }
+const DEFAULT_DATA=[
+{keyword:"고조선",data:["고인돌","비파형 동검","위만조선","우거왕","왕검성"]},
+{keyword:"삼국시대",data:["고구려","백제","신라","광개토대왕","근초고왕"]},
+{keyword:"조선시대",data:["세종대왕","훈민정음","붕당","영정법","사화"]}
 ];
-
-// ---------------------------- 상태 ----------------------------
 let DATA=[], stats={}, rounds={}, sessionQueue=[], currentQuestion=null, sessionMeta={keyword:null,isRandom:false};
-const STORAGE_KEY='kh_quiz_stats_v3', STORAGE_ROUND_KEY='kh_quiz_rounds_v3';
+const STORAGE_KEY='kh_quiz_stats_v6', STORAGE_ROUND_KEY='kh_quiz_rounds_v6';
+const CHO=["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 
-// ---------------------------- 유틸 ----------------------------
 function sample(arr,n=1){ const copy=arr.slice(); const out=[]; for(let i=0;i<n&&copy.length;i++){ const idx=Math.floor(Math.random()*copy.length); out.push(copy.splice(idx,1)[0]); } return out; }
-function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } }
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
 function uniq(arr){ return Array.from(new Set(arr)); }
-const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
-function chosungOf(str){ let out=''; for(const ch of str){ const code=ch.charCodeAt(0); if(code>=0xAC00 && code<=0xD7A3){ out+=CHO[Math.floor((code-0xAC00)/588)]||ch; } else if(/[A-Za-z0-9]/.test(ch)){ out+=ch; } else if(ch.trim()===""){ out+=' '; } else{ out+=ch; } } return out.replace(/\s+/g,'').trim(); }
+function chosungOf(str){ let out=''; for(const ch of str){ const code=ch.charCodeAt(0); if(code>=0xAC00&&code<=0xD7A3){ out+=CHO[Math.floor((code-0xAC00)/588)]||ch; } else if(/[A-Za-z0-9]/.test(ch)){ out+=ch; } else if(ch.trim()===""){ out+=' '; } else out+=ch; } return out.replace(/\s+/g,'').trim(); }
 
-// ---------------------------- 로컬 스토리지 ----------------------------
-function loadStats(){ try{ const raw=localStorage.getItem(STORAGE_KEY); stats=raw?JSON.parse(raw):{}; }catch(e){ stats={}; } }
+function loadStats(){ try{ stats=JSON.parse(localStorage.getItem(STORAGE_KEY))||{}; }catch(e){ stats={}; } }
 function saveStats(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(stats)); }
-function resetStats(){ stats={}; saveStats(); renderMenu(); }
-function loadRounds(){ try{ const raw=localStorage.getItem(STORAGE_ROUND_KEY); rounds=raw?JSON.parse(raw):{}; }catch(e){ rounds={}; } }
+function loadRounds(){ try{ rounds=JSON.parse(localStorage.getItem(STORAGE_ROUND_KEY))||{}; }catch(e){ rounds={}; } }
 function saveRounds(){ localStorage.setItem(STORAGE_ROUND_KEY,JSON.stringify(rounds)); }
+function resetStats(){ stats={}; saveStats(); renderMenu(); }
 
-// ---------------------------- 데이터 로딩 ----------------------------
-function useDefaultData(){ DATA = JSON.parse(JSON.stringify(DEFAULT_DATA)); renderMenu(); }
+function useDefaultData(){ DATA=JSON.parse(JSON.stringify(DEFAULT_DATA)); renderMenu(); }
+function parseCSV(text){ return text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l).map(line=>{ const [k,...rest]=line.split(','); const data=(rest.join(',').includes('|')?rest.join(',').split('|'):rest.join(',').split(';')).map(s=>s.trim()).filter(s=>s); return {keyword:k.trim(),data}; }).filter(x=>x.data.length); }
 
-function parseCSV(text){
-  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-  const out=[];
-  for(const line of lines){
-    const parts=line.split(',');
-    if(parts.length<2) continue;
-    const keyword=parts[0].trim();
-    const rest=parts.slice(1).join(',').trim();
-    const items=rest.includes('|')?rest.split('|'):rest.split(';');
-    const data=items.map(s=>s.trim()).filter(s=>s);
-    if(keyword&&data.length) out.push({keyword,data});
-  }
-  return out;
-}
-
-document.getElementById('fileInput').addEventListener('change',async(ev)=>{
-  const f=ev.target.files[0]; if(!f) return;
-  const text=await f.text();
-  try{ const parsed=JSON.parse(text); if(Array.isArray(parsed)){ DATA=parsed.map(item=>({keyword:item.keyword,data:item.data.slice()})); alert('JSON 데이터 로드 완료'); renderMenu(); return; } }catch(e){}
-  const csv=parseCSV(text);
-  if(csv.length){ DATA=csv; alert('CSV 데이터 로드 완료'); renderMenu(); return; }
-  alert('파일 포맷을 인식하지 못했습니다. JSON이나 CSV (keyword,data1|data2|...) 를 사용하세요.');
-});
-
-// ---------------------------- 메뉴 ----------------------------
 function renderMenu(){
   loadStats();
   document.getElementById('menu').style.display='flex';
@@ -123,231 +95,106 @@ function renderMenu(){
   document.getElementById('currentKeyword').textContent='';
   document.getElementById('progress').textContent='';
   const menu=document.getElementById('menu'); menu.innerHTML='';
-  if(!DATA||!DATA.length){ menu.innerHTML='<div class="small">로드된 데이터가 없습니다.</div>'; return; }
-  DATA.forEach(item=>{
-    if(!stats[item.keyword]) stats[item.keyword]={correct:0,total:0};
+  if(!DATA.length){ menu.innerHTML='<div class="small">데이터 없음</div>'; return; }
+  DATA.forEach(d=>{
+    if(!stats[d.keyword]) stats[d.keyword]={correct:0,total:0};
     const btn=document.createElement('button'); btn.className='kw-btn';
-    btn.innerHTML=`<div class="kw-title">${item.keyword}</div><div class="kw-stats">${stats[item.keyword].correct}/${stats[item.keyword].total}</div>`;
-    btn.addEventListener('click',()=>startSession(item.keyword,false));
+    btn.innerHTML=`<div class="kw-title">${d.keyword}</div><div class="kw-stats">${stats[d.keyword].correct}/${stats[d.keyword].total}</div>`;
+    btn.onclick=()=>startSession(d.keyword,false);
     menu.appendChild(btn);
   });
 }
 
-// ---------------------------- 세션 큐 ----------------------------
 function createSessionQueueForKeyword(keyword){
-  const itemObj=DATA.find(d=>d.keyword===keyword); if(!itemObj) return [];
-  const round=rounds[keyword]||0;
-  const questions=[];
-  for(const value of itemObj.data){
+  const item=DATA.find(d=>d.keyword===keyword); if(!item) return [];
+  const round=rounds[keyword]||0; const questions=[];
+  for(const val of item.data){
     const type=(round%2===0)?(Math.random()<0.5?'chosung':'match'):(Math.random()<0.5?'match':'chosung');
-    if(type==='chosung'){ questions.push({keyword,type,value}); } 
-    else{
-      const maxCorrect=Math.min(3,itemObj.data.length);
-      const isMulti=Math.random()<0.25&&maxCorrect>1;
-      let correctSet=[value];
-      if(isMulti){ correctSet=uniq(correctSet.concat(sample(itemObj.data.filter(x=>x!==value),1))); }
-      questions.push({keyword,type,correctSet});
-    }
+    if(type==='chosung') questions.push({keyword,type,value:val});
+    else{ let correctSet=[val]; if(item.data.length>1&&Math.random()<0.25) correctSet=uniq(correctSet.concat(sample(item.data.filter(x=>x!==val),1))); questions.push({keyword,type,correctSet}); }
   }
-  shuffleInPlace(questions);
-  return questions;
+  return shuffle(questions);
 }
-
 function createSessionQueueRandom(){
-  const all=[];
-  DATA.forEach(itemObj=>{
-    const keyword=itemObj.keyword; const round=rounds[keyword]||0;
-    itemObj.data.forEach(value=>{
+  const all=[]; DATA.forEach(item=>{
+    const round=rounds[item.keyword]||0; item.data.forEach(val=>{
       const type=(round%2===0)?(Math.random()<0.5?'chosung':'match'):(Math.random()<0.5?'match':'chosung');
-      if(type==='chosung') all.push({keyword,type,value});
-      else{ 
-        const maxCorrect=Math.min(3,itemObj.data.length);
-        const isMulti=Math.random()<0.25&&maxCorrect>1;
-        let correctSet=[value];
-        if(isMulti) correctSet=uniq(correctSet.concat(sample(itemObj.data.filter(x=>x!==value),1)));
-        all.push({keyword,type,correctSet});
-      }
+      if(type==='chosung') all.push({keyword:item.keyword,type,value:val});
+      else{ let correctSet=[val]; if(item.data.length>1&&Math.random()<0.25) correctSet=uniq(correctSet.concat(sample(item.data.filter(x=>x!==val),1))); all.push({keyword,type,correctSet}); }
     });
-  });
-  shuffleInPlace(all);
-  return all;
+  }); return shuffle(all);
 }
 
-// ---------------------------- 세션 시작 ----------------------------
 function startSession(keyword,isRandom){
   sessionQueue=isRandom?createSessionQueueRandom():createSessionQueueForKeyword(keyword);
   sessionMeta={keyword,isRandom};
   document.getElementById('menu').style.display='none';
-  document.getElementById('quiz').style.display='block';
+  document.getElementById('quiz').style.display='flex';
   document.getElementById('backBtn').style.display='inline-block';
   nextQuestion();
 }
-
-// ---------------------------- 진행 표시 ----------------------------
-function updateProgress(){
-  const left=sessionQueue.length+(currentQuestion?1:0);
-  document.getElementById('currentKeyword').textContent=sessionMeta.keyword?`문제: ${sessionMeta.keyword}`:'';
-  document.getElementById('progress').textContent=left?`남은 문제: ${left}`:'';
-}
-
-// ---------------------------- 다음 문제 ----------------------------
-function nextQuestion(){
-  if(sessionQueue.length===0){ showSessionEnd(); return; }
-  currentQuestion=sessionQueue.shift();
-  updateProgress();
-  renderQuestion(currentQuestion);
-}
-
-// ---------------------------- 세션 종료 ----------------------------
+function updateProgress(){ const left=sessionQueue.length+(currentQuestion?1:0); document.getElementById('currentKeyword').textContent=sessionMeta.keyword?`문제: ${sessionMeta.keyword}`:''; document.getElementById('progress').textContent=left?`남은 문제: ${left}`:''; }
+function nextQuestion(){ if(sessionQueue.length===0){ showSessionEnd(); return; } currentQuestion=sessionQueue.shift(); updateProgress(); renderQuestion(currentQuestion); }
 function showSessionEnd(){
   const quiz=document.getElementById('quiz'); quiz.innerHTML='';
-  const msg=document.createElement('div'); msg.className='question'; msg.textContent='모든 문제를 풀었습니다!'; quiz.appendChild(msg);
-  const controls=document.createElement('div'); controls.className='center';
+  const msg=document.createElement('div'); msg.className='question'; msg.textContent='모든 문제 완료!'; quiz.appendChild(msg);
+  const div=document.createElement('div'); div.className='center';
   const restart=document.createElement('button'); restart.textContent='다시 시작';
   const toMenu=document.createElement('button'); toMenu.textContent='메뉴로 돌아가기';
-  controls.appendChild(restart); controls.appendChild(toMenu); quiz.appendChild(controls);
-  restart.addEventListener('click',()=>{
-    if(!sessionMeta.isRandom&&sessionMeta.keyword){ rounds[sessionMeta.keyword]=(rounds[sessionMeta.keyword]||0)+1; saveRounds(); }
-    sessionQueue=sessionMeta.isRandom?createSessionQueueRandom():createSessionQueueForKeyword(sessionMeta.keyword);
-    nextQuestion();
-  });
-  toMenu.addEventListener('click',()=>{ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; });
-  document.getElementById('progress').textContent='';
+  restart.onclick=()=>{ if(!sessionMeta.isRandom && sessionMeta.keyword){ rounds[sessionMeta.keyword]=(rounds[sessionMeta.keyword]||0)+1; saveRounds(); } sessionQueue=sessionMeta.isRandom?createSessionQueueRandom():createSessionQueueForKeyword(sessionMeta.keyword); nextQuestion(); };
+  toMenu.onclick=()=>{ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; };
+  div.appendChild(restart); div.appendChild(toMenu); quiz.appendChild(div); document.getElementById('progress').textContent='';
 }
 
-// ---------------------------- 문제 렌더링 ----------------------------
-function renderQuestion(q){
-  const quiz=document.getElementById('quiz'); quiz.innerHTML='';
-  if(q.type==='chosung') renderChosungQuestion(q);
-  else renderMatchQuestion(q);
-}
-
-// ---------------------------- 초성 문제 ----------------------------
-function renderChosungQuestion(q){
-  const quiz=document.getElementById('quiz');
-  const question=document.createElement('div'); question.className='question'; quiz.appendChild(question);
-  question.textContent=`초성: ${chosungOf(q.value)}`;
-
-  const opts=[q.value]; 
-  const dis=collectDistractors(new Set(opts),3); 
-  const allOpts=uniq(opts.concat(dis)).slice(0,4); 
-  shuffleInPlace(allOpts);
-
-  const optionsDiv=document.createElement('div'); optionsDiv.className='options'; 
-  quiz.appendChild(optionsDiv);
-
-  allOpts.forEach(opt=>{
-    const div=document.createElement('div'); div.className='opt'; div.textContent=opt; optionsDiv.appendChild(div);
-    div.addEventListener('click',()=>{
-      Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-      if(opt===q.value){ 
-        div.classList.add('correct'); 
-        updateStats(q.keyword,true); 
-      } else { 
-        div.classList.add('wrong'); 
-        Array.from(optionsDiv.children).forEach(c=>{
-          if(c.textContent===q.value) c.classList.add('correct'); 
-        }); 
-        updateStats(q.keyword,false); 
-      }
-
-      // 다음 문제 버튼 생성
-      const nextBtn=document.createElement('button');
-      nextBtn.textContent='다음 문제';
-      nextBtn.style.marginTop='12px';
-      nextBtn.addEventListener('click', nextQuestion);
-      quiz.appendChild(nextBtn);
-    });
-  });
-}
-
-// ---------------------------- 매칭 문제 ----------------------------
-function renderMatchQuestion(q){
-  const quiz=document.getElementById('quiz'); 
-  const question=document.createElement('div'); question.className='question'; quiz.appendChild(question);
-  const correctSet=new Set(q.correctSet); 
-  const isMulti=correctSet.size>1;
-  question.textContent=`${q.keyword}에 알맞은 것은? ${isMulti?'(중복 선택 가능)':''}`;
+function renderQuestion(q){ const quiz=document.getElementById('quiz'); quiz.innerHTML=''; if(q.type==='chosung') renderChosung(q); else renderMatch(q); }
+function renderChosung(q){
+  const quiz=document.getElementById('quiz'); const question=document.createElement('div'); question.className='question'; question.textContent=`초성: ${chosungOf(q.value)}`; quiz.appendChild(question);
   const optionsDiv=document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
-  const opts=Array.from(correctSet); 
-  const need=Math.max(0,4-opts.length); 
-  const distractors=collectDistractors(correctSet,need);
-  const allOpts=uniq(opts.concat(distractors)).slice(0,4); 
-  shuffleInPlace(allOpts);
-
-  if(isMulti){
-    allOpts.forEach(opt=>{
+  const opts=shuffle(uniq([q.value].concat(collectDistractors(new Set([q.value]),3))));
+  opts.forEach(opt=>{ const div=document.createElement('div'); div.className='opt'; div.textContent=opt; div.onclick=()=>handleAnswer(optionsDiv,q.keyword,opt===q.value,[div],[q.value]); optionsDiv.appendChild(div); });
+}
+function renderMatch(q){
+  const quiz=document.getElementById('quiz'); const correctSet=new Set(q.correctSet); const isMulti=correctSet.size>1;
+  const question=document.createElement('div'); question.className='question'; question.textContent=`${q.keyword}에 알맞은 것은? ${isMulti?'(중복 선택 가능)':''}`; quiz.appendChild(question);
+  const optionsDiv=document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
+  const opts=shuffle(uniq([...correctSet,...collectDistractors(correctSet,Math.max(0,4-correctSet.size))]));
+  opts.forEach(opt=>{
+    if(isMulti){
       const label=document.createElement('label'); label.className='opt';
       const cb=document.createElement('input'); cb.type='checkbox'; cb.style.marginRight='8px'; label.appendChild(cb);
-      const span=document.createElement('span'); span.textContent=opt; label.appendChild(span);
-      optionsDiv.appendChild(label);
-    });
-
-    const checkBtn=document.createElement('button');
-    checkBtn.textContent='정답 확인';
-    checkBtn.style.marginTop='12px';
-    quiz.appendChild(checkBtn);
-
-    checkBtn.addEventListener('click',()=>{
-      const checked=Array.from(optionsDiv.querySelectorAll('input[type=checkbox]'))
-                          .filter(i=>i.checked).map(i=>i.parentElement.textContent.trim());
-      const checkedSet=new Set(checked);
-      const allCorrectSelected=Array.from(correctSet).every(c=>checkedSet.has(c));
-      const anyWrongSelected=checked.some(s=>!correctSet.has(s));
-
-      Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-      Array.from(optionsDiv.children).forEach(c=>{
-        const text=c.textContent.trim();
-        if(correctSet.has(text)) c.classList.add('correct');
-        if(checkedSet.has(text) && !correctSet.has(text)) c.classList.add('wrong');
-      });
-
-      updateStats(q.keyword, allCorrectSelected && !anyWrongSelected);
-
-      const nextBtn=document.createElement('button');
-      nextBtn.textContent='다음 문제';
-      nextBtn.style.marginTop='12px';
-      nextBtn.addEventListener('click', nextQuestion);
-      quiz.appendChild(nextBtn);
-    });
-  } else {
-    allOpts.forEach(opt=>{
-      const div=document.createElement('div'); div.className='opt'; div.textContent=opt; optionsDiv.appendChild(div);
-      div.addEventListener('click',()=>{
-        Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-        if(correctSet.has(opt)){ 
-          div.classList.add('correct'); 
-          updateStats(q.keyword,true); 
-        } else { 
-          div.classList.add('wrong'); 
-          Array.from(optionsDiv.children).forEach(c=>{
-            if(correctSet.has(c.textContent.trim())) c.classList.add('correct');
-          }); 
-          updateStats(q.keyword,false); 
-        }
-
-        const nextBtn=document.createElement('button');
-        nextBtn.textContent='다음 문제';
-        nextBtn.style.marginTop='12px';
-        nextBtn.addEventListener('click', nextQuestion);
-        quiz.appendChild(nextBtn);
-      });
-    });
-  }
+      const span=document.createElement('span'); span.textContent=opt; label.appendChild(span); optionsDiv.appendChild(label);
+      cb.onchange=()=>checkMulti(optionsDiv, correctSet,q.keyword);
+    }else{ const div=document.createElement('div'); div.className='opt'; div.textContent=opt; div.onclick=()=>handleAnswer(optionsDiv,q.keyword,correctSet.has(opt),[div],Array.from(correctSet)); optionsDiv.appendChild(div);}
+  });
 }
 
-// ---------------------------- 옵션 수집 ----------------------------
-function collectDistractors(excludeSet,count){
-  const pool=DATA.flatMap(d=>d.data).filter(x=>!excludeSet.has(x));
-  return sample(pool,count);
+function handleAnswer(container,keyword,isCorrect,clicked,correctAnswers){
+  Array.from(container.children).forEach(c=>c.classList.add('disabled'));
+  clicked.forEach(c=>isCorrect?c.classList.add('correct'):c.classList.add('wrong'));
+  Array.from(container.children).forEach(c=>{ const text=c.querySelector('span')?.textContent.trim()||c.textContent.trim(); if(correctAnswers.includes(text)) c.classList.add('correct'); });
+  updateStats(keyword,isCorrect); showNextButton(container);
+}
+function checkMulti(container,correctSet,keyword){
+  const checked=Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(i=>i.parentElement.querySelector('span').textContent.trim());
+  const checkedSet=new Set(checked);
+  const allCorrect=Array.from(correctSet).every(c=>checkedSet.has(c));
+  const anyWrong=checked.some(c=>!correctSet.has(c));
+  if(allCorrect&&!anyWrong||anyWrong){ handleAnswer(container,keyword,allCorrect&&!anyWrong,[],Array.from(correctSet)); }
+}
+function showNextButton(container){
+  const btn=document.createElement('button'); btn.className='next-btn'; btn.textContent='다음 문제';
+  btn.onclick=nextQuestion;
+  container.appendChild(btn);
 }
 
-// ---------------------------- 버튼 ----------------------------
-document.getElementById('backBtn').addEventListener('click',()=>{ if(confirm('세션 종료 후 메뉴로 돌아가시겠어요?')){ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; } });
-document.getElementById('randomBtn').addEventListener('click',()=>{ startSession('랜덤',true); });
-document.getElementById('resetStatsBtn').addEventListener('click',()=>{ if(confirm('모든 통계를 초기화하시겠어요?')) resetStats(); });
+function collectDistractors(excludeSet,count){ return sample(DATA.flatMap(d=>d.data).filter(x=>!excludeSet.has(x)),count); }
 
-// ---------------------------- 초기화 ----------------------------
+document.getElementById('fileInput').addEventListener('change',async(ev)=>{ const f=ev.target.files[0]; if(!f) return; const text=await f.text(); try{ const parsed=JSON.parse(text); if(Array.isArray(parsed)){ DATA=parsed.map(i=>({keyword:i.keyword,data:i.data.slice()})); alert('JSON 로드'); renderMenu(); return; } }catch(e){} const csv=parseCSV(text); if(csv.length){ DATA=csv; alert('CSV 로드'); renderMenu(); return; } alert('파일 인식 불가'); });
+document.getElementById('backBtn').onclick=()=>{ if(confirm('세션 종료 후 메뉴로 돌아가시겠어요?')){ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; } };
+document.getElementById('randomBtn').onclick=()=>startSession('랜덤',true);
+document.getElementById('resetStatsBtn').onclick=()=>{ if(confirm('모든 통계 초기화?')) resetStats(); };
+
+function updateStats(keyword,correct){ stats[keyword]=stats[keyword]||{correct:0,total:0}; stats[keyword].total++; if(correct) stats[keyword].correct++; saveStats(); renderMenu(); }
 function init(){ loadStats(); loadRounds(); useDefaultData(); }
 init();
 </script>
