@@ -1,28 +1,19 @@
 <!--
 Korean History Quiz - Single-file app (index.html)
+Updated: Session queue implementation so a chosen keyword runs a continuous problem session
 Drop this file into a GitHub Pages repo (root) as `index.html` and enable Pages (main branch) to publish.
 
-Features implemented in this file:
-- Sample data embedded (DEFAULT_DATA). Also supports loading your own JSON or CSV file via the "Load data" button.
-  * JSON format: [{"keyword":"고조선", "data":["고인돌","비파형 동검", ...]}, ...]
-  * CSV format (simple): each line `keyword,data1|data2|data3` (data items separated by `|` or `;`).
-- Keyword selection menu with per-keyword stats shown (correct/total) stored in localStorage (persistent across sessions on the same browser).
-- Random button that draws problems from all keywords/data.
-- Two question types implemented: 일치 문제 (match) and 초성 문제 (chosung).
-  * Match supports single-correct (radio) and multi-correct (checkbox) problems. Multi-correct problems are marked with "(중복)".
-  * For multi-select: if the user clicks a wrong checkbox, the app immediately reveals the correct answers (correct -> green, wrong -> red) and counts the attempt as incorrect. Only when the user selects exactly the full correct set and no wrong ones is it counted as correct.
-- 초성 문제: shows the initial consonants (초성) of the data item (e.g., "고조선" -> "ㄱㅈㅅ") and multiple choices.
-- Back button to return to the menu / previous screen.
-- Reset stats button to clear accumulated statistics.
-- Mobile responsive layout and accessible buttons.
+Features implemented in this file (updated):
+- All previous features preserved (load JSON/CSV, stats, match/chosung question types, localStorage stats)
+- **Session queue**: when a user selects a keyword (or Random), a session queue is created containing one question per data item. The user continues solving questions in that queue without returning to the menu automatically.
+  * Each queue entry is either a 'match' or 'chosung' question. Types are assigned so repeated sessions will tend to alternate formats (stored round counter).
+  * After the queue is exhausted, the user can choose to [다시 시작] (reshuffle and continue) or [메뉴로 돌아가기].
+- Questions are consumed (no repeats) until the queue is empty; then repetition is allowed by the user's choice.
+- After each answer, the next question is automatically loaded (small visual delay to show feedback).
 
 Limitations / notes:
-- Stats are stored locally (localStorage) — no server-side user tracking.
-- Distractors are sampled from other data in the dataset; no advanced semantic distractor generation.
-
-If you'd like, I can:
-- Extract the `data` into a separate `data.json` file and give you that file content.
-- Add an option to export/import stats or to sync stats to a server.
+- Stats stored in localStorage; session preferences use localStorage round counters to alter types between restarts.
+- Distractors are taken from the dataset (no semantic distractor generator).
 
 -->
 
@@ -31,7 +22,7 @@ If you'd like, I can:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>한국사 능력검정 퀴즈</title>
+  <title>한국사 능력검정 퀴즈 (Session Mode)</title>
   <style>
     :root{--bg:#fbfbfd;--card:#fff;--accent:#0b63d3;--success:#2e7d32;--danger:#c62828}
     html,body{height:100%;margin:0;font-family:Inter, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;background:var(--bg);color:#111}
@@ -56,6 +47,7 @@ If you'd like, I can:
     .small{font-size:.9rem;color:#666}
     .kbd{font-family:monospace;background:#f4f6fb;padding:4px 8px;border-radius:6px}
     footer{margin-top:18px;color:#777;font-size:.9rem}
+    .center{display:flex;gap:8px}
     @media (max-width:480px){.kw-btn{min-width:48%;font-size:.95rem}.controls{flex-direction:column;align-items:stretch}button,label.input-btn{width:100%}}
   </style>
 </head>
@@ -64,7 +56,7 @@ If you'd like, I can:
     <header>
       <div>
         <h1>한국사 능력검정 퀴즈</h1>
-        <div class="small">GitHub Pages용 정적 퀴즈 (로컬에선 파일 열기 대신 간단히 서버로 서빙하세요)</div>
+        <div class="small">Session 모드: 동일 키워드 선택 시 연속 문제 풀이 가능</div>
       </div>
       <div class="controls">
         <label class="input-btn">Load data <input id="fileInput" type="file" accept="application/json,text/csv" style="display:none"></label>
@@ -81,6 +73,7 @@ If you'd like, I can:
       <div class="meta">
         <button id="backBtn" style="display:none">이전으로</button>
         <div id="currentKeyword" class="small"></div>
+        <div id="progress" class="small"></div>
       </div>
     </main>
 
@@ -98,19 +91,27 @@ If you'd like, I can:
     ];
 
     // ---------------------------- State and storage ----------------------------
-    let DATA = []; // loaded dataset
-    let stats = {}; // { keyword: {correct: n, total: m} }
+    let DATA = [];
+    let stats = {};
 
     const STORAGE_KEY = 'kh_quiz_stats_v1';
+    const STORAGE_ROUND_KEY = 'kh_quiz_rounds_v1'; // store round counters so restarts alternate formats
+
+    // Session queue
+    let sessionQueue = []; // array of question objects
+    let currentQuestion = null;
+    let sessionMeta = { keyword: null, isRandom: false };
 
     function loadStats(){
-      try{
-        const raw = localStorage.getItem(STORAGE_KEY);
-        stats = raw ? JSON.parse(raw) : {};
-      }catch(e){ stats = {}; }
+      try{ const raw = localStorage.getItem(STORAGE_KEY); stats = raw ? JSON.parse(raw) : {}; }catch(e){ stats = {}; }
     }
     function saveStats(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); }
     function resetStats(){ stats = {}; saveStats(); renderMenu(); }
+
+    function loadRounds(){
+      try{ const raw = localStorage.getItem(STORAGE_ROUND_KEY); return raw ? JSON.parse(raw) : {}; }catch(e){ return {}; }
+    }
+    function saveRounds(r){ localStorage.setItem(STORAGE_ROUND_KEY, JSON.stringify(r)); }
 
     // ---------------------------- Utility helpers ----------------------------
     function sample(arr, n=1){
@@ -122,7 +123,7 @@ If you'd like, I can:
       }
       return out;
     }
-
+    function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } }
     function uniq(arr){ return Array.from(new Set(arr)); }
 
     // 초성 추출
@@ -142,7 +143,6 @@ If you'd like, I can:
           out += ch;
         }
       }
-      // remove repeated spaces
       return out.replace(/\s+/g,'').trim();
     }
 
@@ -153,7 +153,6 @@ If you'd like, I can:
       const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
       const out = [];
       for(const line of lines){
-        // split first comma only
         const parts = line.split(',');
         if(parts.length < 2) continue;
         const keyword = parts[0].trim();
@@ -172,15 +171,13 @@ If you'd like, I can:
       try{
         const parsed = JSON.parse(text);
         if(Array.isArray(parsed)){
-          DATA = parsed.map(item => ({keyword: item.keyword, data: item.data.slice()}));
-          alert('JSON 데이터 로드 완료');
-          renderMenu();
-          return;
+          // merge into DATA
+          DATA = DATA.concat(parsed.map(item => ({keyword: item.keyword, data: item.data.slice()})));
+          alert('JSON 데이터 로드 완료'); renderMenu(); return;
         }
       }catch(e){
-        // try CSV
         const csv = parseCSV(text);
-        if(csv.length){ DATA = csv; alert('CSV 데이터 로드 완료'); renderMenu(); return; }
+        if(csv.length){ DATA = DATA.concat(csv); alert('CSV 데이터 로드 완료'); renderMenu(); return; }
       }
       alert('파일 포맷을 인식하지 못했습니다. JSON이나 CSV (keyword,data1|data2|...) 를 사용하세요.');
     });
@@ -192,6 +189,7 @@ If you'd like, I can:
       document.getElementById('menu').style.display = 'flex';
       document.getElementById('backBtn').style.display = 'none';
       document.getElementById('currentKeyword').textContent = '';
+      document.getElementById('progress').textContent = '';
 
       const menu = document.getElementById('menu');
       menu.innerHTML = '';
@@ -201,86 +199,162 @@ If you'd like, I can:
         const btn = document.createElement('button');
         btn.className = 'kw-btn';
         btn.innerHTML = `<div class="kw-title">${item.keyword}</div><div class="kw-stats">${stats[item.keyword].correct}/${stats[item.keyword].total}</div>`;
-        btn.addEventListener('click', () => startQuiz(item.keyword));
+        btn.addEventListener('click', () => startSession(item.keyword));
         menu.appendChild(btn);
       });
     }
 
-    // ---------------------------- Quiz flow ----------------------------
-    let current = { keyword: null, item: null, correctSet: null, mode: null }; // mode: 'match'|'chosung'
+    // ---------------------------- Session queue logic ----------------------------
+    function createSessionQueueForKeyword(keyword){
+      const itemObj = DATA.find(d=>d.keyword===keyword);
+      if(!itemObj) return [];
+      const rounds = loadRounds();
+      const round = (rounds[keyword]||0);
 
-    function startQuiz(keyword){
-      current.keyword = keyword;
+      // create one question per data item
+      const questions = [];
+      for(const value of itemObj.data){
+        // decide type: alternate based on round to get variety between restarts
+        const base = Math.random() < 0.5 ? 'chosung' : 'match';
+        const type = (round % 2 === 0) ? base : (base === 'chosung' ? 'match' : 'chosung');
+        if(type === 'chosung'){
+          questions.push({ keyword, type: 'chosung', value });
+        } else {
+          // match: create a correct set that always includes this value; sometimes multi
+          const maxCorrect = Math.min(3, itemObj.data.length);
+          const isMulti = Math.random() < 0.25 && maxCorrect > 1;
+          let correctSet = [value];
+          if(isMulti){
+            // pick one or two additional correct items excluding the main value
+            const others = itemObj.data.filter(x=>x!==value);
+            const add = sample(others, Math.min(1, others.length));
+            correctSet = uniq(correctSet.concat(add));
+          }
+          questions.push({ keyword, type: 'match', correctSet });
+        }
+      }
+      shuffleInPlace(questions);
+      return questions;
+    }
+
+    function createSessionQueueRandom(){
+      const rounds = loadRounds();
+      // use a per-keyword round but we will generate a flat list with types
+      const all = [];
+      for(const itemObj of DATA){
+        const keyword = itemObj.keyword;
+        const round = (rounds[keyword]||0);
+        for(const value of itemObj.data){
+          const base = Math.random() < 0.5 ? 'chosung' : 'match';
+          const type = (round % 2 === 0) ? base : (base === 'chosung' ? 'match' : 'chosung');
+          if(type === 'chosung') all.push({keyword, type:'chosung', value});
+          else{
+            const maxCorrect = Math.min(3, itemObj.data.length);
+            const isMulti = Math.random() < 0.25 && maxCorrect > 1;
+            let correctSet = [value];
+            if(isMulti){
+              const others = itemObj.data.filter(x=>x!==value);
+              const add = sample(others, Math.min(1, others.length));
+              correctSet = uniq(correctSet.concat(add));
+            }
+            all.push({keyword, type:'match', correctSet});
+          }
+        }
+      }
+      shuffleInPlace(all);
+      return all;
+    }
+
+    function startSession(keyword){
+      sessionQueue = createSessionQueueForKeyword(keyword);
+      sessionMeta.keyword = keyword; sessionMeta.isRandom = false;
       document.getElementById('menu').style.display = 'none';
       document.getElementById('quiz').style.display = 'block';
       document.getElementById('backBtn').style.display = 'inline-block';
-      document.getElementById('currentKeyword').textContent = `문제: ${keyword}`;
-      generateQuestion(keyword);
+      updateProgress();
+      nextQuestion();
     }
 
-    function generateRandomQuestion(){
-      // pick random item from all data
-      const all = DATA.flatMap(d => d.data.map(x => ({keyword: d.keyword, value: x})));
-      if(!all.length) return;
-      const picked = sample(all,1)[0];
-      const itemObj = DATA.find(d => d.keyword === picked.keyword);
-      current.keyword = picked.keyword;
-      current.item = itemObj;
+    function startRandomSession(){
+      sessionQueue = createSessionQueueRandom();
+      sessionMeta.keyword = '랜덤'; sessionMeta.isRandom = true;
       document.getElementById('menu').style.display = 'none';
       document.getElementById('quiz').style.display = 'block';
       document.getElementById('backBtn').style.display = 'inline-block';
-      document.getElementById('currentKeyword').textContent = `랜덤 문제`;
-      // pick question type randomly
-      if(Math.random() < 0.5) makeChosungQuestion(itemObj, picked.value);
-      else makeMatchQuestion(itemObj, picked.value);
+      updateProgress();
+      nextQuestion();
     }
 
-    function generateQuestion(keyword){
-      const itemObj = DATA.find(d=>d.keyword === keyword);
-      if(!itemObj) return;
-      current.item = itemObj;
-      // pick type at random
-      if(Math.random() < 0.5) makeMatchQuestion(itemObj);
-      else makeChosungQuestion(itemObj);
+    function updateProgress(){
+      const left = sessionQueue.length + (currentQuestion ? 1 : 0);
+      document.getElementById('currentKeyword').textContent = sessionMeta.keyword ? `문제: ${sessionMeta.keyword}` : '';
+      document.getElementById('progress').textContent = left ? `남은 문제: ${left}` : '';
     }
 
-    // helper to collect distractors from whole dataset
+    function nextQuestion(){
+      if(sessionQueue.length === 0){
+        // session finished
+        showSessionEnd();
+        return;
+      }
+      currentQuestion = sessionQueue.shift();
+      renderQuestion(currentQuestion);
+      updateProgress();
+    }
+
+    function showSessionEnd(){
+      const quiz = document.getElementById('quiz'); quiz.innerHTML = '';
+      const msg = document.createElement('div'); msg.className='question'; msg.textContent = '모든 문제를 풀었습니다!'; quiz.appendChild(msg);
+      const controls = document.createElement('div'); controls.className='center';
+      const restart = document.createElement('button'); restart.textContent = '다시 시작';
+      const toMenu = document.createElement('button'); toMenu.textContent = '메뉴로 돌아가기';
+      controls.appendChild(restart); controls.appendChild(toMenu); quiz.appendChild(controls);
+
+      restart.addEventListener('click', ()=>{
+        // increment round to alternate formats next session
+        const rounds = loadRounds();
+        if(!sessionMeta.isRandom && sessionMeta.keyword){ rounds[sessionMeta.keyword] = (rounds[sessionMeta.keyword]||0) + 1; }
+        saveRounds(rounds);
+        if(sessionMeta.isRandom) sessionQueue = createSessionQueueRandom(); else sessionQueue = createSessionQueueForKeyword(sessionMeta.keyword);
+        updateProgress(); nextQuestion();
+      });
+      toMenu.addEventListener('click', ()=>{ renderMenu(); sessionQueue = []; currentQuestion = null; sessionMeta = {keyword:null,isRandom:false}; });
+
+      document.getElementById('progress').textContent = '';
+    }
+
+    // ---------------------------- Render a single question ----------------------------
+    function renderQuestion(q){
+      const quiz = document.getElementById('quiz'); quiz.innerHTML='';
+      if(q.type === 'chosung') renderChosungQuestion(q);
+      else renderMatchQuestion(q);
+    }
+
+    // collect distractors from whole dataset excluding provided set
     function collectDistractors(excludeSet, count){
       const pool = DATA.flatMap(d => d.data).filter(x => !excludeSet.has(x));
       return sample(pool, Math.min(count, pool.length));
     }
 
-    function makeMatchQuestion(itemObj, forcedValue=null){
+    function renderMatchQuestion(q){
+      const itemObj = DATA.find(d=>d.keyword === q.keyword);
       const quiz = document.getElementById('quiz');
-      quiz.innerHTML = '';
-      const question = document.createElement('div');
-      question.className = 'question';
-
-      // decide number of correct answers (1..min(3, itemObj.data.length)) randomly
-      const maxCorrect = Math.min(3, itemObj.data.length);
-      const numCorrect = Math.random() < 0.25 && maxCorrect > 1 ? Math.min(2, maxCorrect) : 1; // 25% chance to be multi if available
-
-      // pick correct set
-      const correctSet = new Set(sample(itemObj.data, numCorrect));
-      current.correctSet = correctSet;
+      const question = document.createElement('div'); question.className='question';
+      const correctSet = new Set(q.correctSet);
       const isMulti = correctSet.size > 1;
-
-      question.textContent = `${itemObj.keyword}에 알맞은 것은? ${isMulti ? '(중복)' : ''}`;
+      question.textContent = `${q.keyword}에 알맞은 것은? ${isMulti ? '(중복)' : ''}`;
       quiz.appendChild(question);
 
-      // prepare options: include correct answers + distractors to make up to 4 options
+      // prepare options
       const opts = Array.from(correctSet);
       const need = Math.max(0, 4 - opts.length);
       const distractors = collectDistractors(new Set(opts), need);
       const allOpts = uniq(opts.concat(distractors)).slice(0,4);
-      // shuffle
-      for(let i=allOpts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [allOpts[i],allOpts[j]]=[allOpts[j],allOpts[i]]; }
+      shuffleInPlace(allOpts);
 
-      const optionsDiv = document.createElement('div'); optionsDiv.className='options';
-      quiz.appendChild(optionsDiv);
+      const optionsDiv = document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
 
       if(isMulti){
-        // checkboxes
         const info = document.createElement('div'); info.className='small'; info.textContent = '정답인 항목을 모두 선택하세요.'; quiz.appendChild(info);
         allOpts.forEach(optText => {
           const label = document.createElement('label'); label.className='opt';
@@ -291,39 +365,34 @@ If you'd like, I can:
 
           cb.addEventListener('change', ()=>{
             if(cb.checked && !correctSet.has(optText)){
-              // immediate reveal: wrong chosen
               revealMultiResult(false, optionsDiv, correctSet, optText);
+              setTimeout(nextQuestion, 900);
             } else {
-              // if user selected all corrects and nothing else
               const checked = Array.from(optionsDiv.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.parentElement.textContent.trim());
               const checkedSet = new Set(checked);
               const allCorrectSelected = Array.from(correctSet).every(c => checkedSet.has(c));
               const anyWrongSelected = checked.some(s => !correctSet.has(s));
               if(allCorrectSelected && !anyWrongSelected && checked.length === correctSet.size){
                 revealMultiResult(true, optionsDiv, correctSet);
+                setTimeout(nextQuestion, 900);
               }
             }
           });
         });
 
       } else {
-        // single choice - radio buttons (or clickable divs)
         allOpts.forEach(optText => {
           const div = document.createElement('div'); div.className='opt'; div.textContent = optText;
           optionsDiv.appendChild(div);
           div.addEventListener('click', ()=>{
             const isCorrect = correctSet.has(optText);
-            // show colors
             Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-            if(isCorrect){ div.classList.add('correct'); updateStats(itemObj.keyword, true); }
-            else { div.classList.add('wrong'); // highlight correct
-              Array.from(optionsDiv.children).forEach(c=>{ if(correctSet.has(c.textContent.trim())) c.classList.add('correct'); });
-              updateStats(itemObj.keyword, false);
-            }
+            if(isCorrect){ div.classList.add('correct'); updateStats(q.keyword, true); }
+            else { div.classList.add('wrong'); Array.from(optionsDiv.children).forEach(c=>{ if(correctSet.has(c.textContent.trim())) c.classList.add('correct'); }); updateStats(q.keyword, false); }
+            setTimeout(nextQuestion, 900);
           });
         });
       }
-
     }
 
     function revealMultiResult(isCorrect, optionsDiv, correctSet, wrongChosen=null){
@@ -333,25 +402,21 @@ If you'd like, I can:
         if(correctSet.has(txt)) c.classList.add('correct');
         if(wrongChosen && txt === wrongChosen) c.classList.add('wrong');
       });
-      updateStats(current.item.keyword, isCorrect);
+      updateStats(currentQuestion.keyword || currentQuestion?.keyword, isCorrect);
     }
 
-    function makeChosungQuestion(itemObj, forcedValue=null){
+    function renderChosungQuestion(q){
       const quiz = document.getElementById('quiz'); quiz.innerHTML='';
       const question = document.createElement('div'); question.className='question';
-
-      // pick one correct answer from itemObj.data
-      const correct = forcedValue || sample(itemObj.data,1)[0];
+      const correct = q.value;
       const chos = chosungOf(correct);
       question.textContent = `초성: ${chos}`;
       quiz.appendChild(question);
 
-      // prepare options: correct + 3 distractors
       const opts = [correct];
       const dis = collectDistractors(new Set(opts), 3);
       const allOpts = uniq(opts.concat(dis)).slice(0,4);
-      // shuffle
-      for(let i=allOpts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [allOpts[i],allOpts[j]]=[allOpts[j],allOpts[i]]; }
+      shuffleInPlace(allOpts);
 
       const optionsDiv = document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
       allOpts.forEach(opt => {
@@ -359,8 +424,9 @@ If you'd like, I can:
         optionsDiv.appendChild(div);
         div.addEventListener('click', ()=>{
           Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-          if(opt === correct){ div.classList.add('correct'); updateStats(itemObj.keyword, true); }
-          else { div.classList.add('wrong'); Array.from(optionsDiv.children).forEach(c=>{ if(c.textContent.trim() === correct) c.classList.add('correct'); }); updateStats(itemObj.keyword, false); }
+          if(opt === correct){ div.classList.add('correct'); updateStats(q.keyword, true); }
+          else { div.classList.add('wrong'); Array.from(optionsDiv.children).forEach(c=>{ if(c.textContent.trim() === correct) c.classList.add('correct'); }); updateStats(q.keyword, false); }
+          setTimeout(nextQuestion, 900);
         });
       });
     }
@@ -369,35 +435,19 @@ If you'd like, I can:
       if(!stats[keyword]) stats[keyword] = {correct:0,total:0};
       if(correct) stats[keyword].correct++;
       stats[keyword].total++;
-      saveStats();
-      // update menu display (if visible)
-      const menu = document.getElementById('menu');
-      if(menu.style.display !== 'none') renderMenu();
-      else{
-        // update shown keyword count (if in menu hidden)
-        renderMenu();
-      }
+      saveStats(); renderMenu();
     }
 
     // ---------------------------- Buttons ----------------------------
     document.getElementById('backBtn').addEventListener('click', ()=>{
-      renderMenu();
+      if(confirm('세션을 종료하고 메뉴로 돌아가시겠어요?')){ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; }
     });
 
-    document.getElementById('randomBtn').addEventListener('click', ()=>{
-      generateRandomQuestion();
-    });
-
-    document.getElementById('resetStatsBtn').addEventListener('click', ()=>{
-      if(confirm('모든 통계를 초기화하시겠어요?')){ resetStats(); }
-    });
+    document.getElementById('randomBtn').addEventListener('click', ()=>{ startRandomSession(); });
+    document.getElementById('resetStatsBtn').addEventListener('click', ()=>{ if(confirm('모든 통계를 초기화하시겠어요?')){ resetStats(); } });
 
     // ---------------------------- Init ----------------------------
-    function init(){
-      loadStats();
-      useDefaultData();
-    }
-
+    function init(){ loadStats(); useDefaultData(); }
     init();
   </script>
 </body>
