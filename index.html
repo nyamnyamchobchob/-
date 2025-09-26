@@ -64,7 +64,6 @@ button:hover,label.input-btn:hover{filter:brightness(.98);cursor:pointer}
 </div>
 
 <script>
-// STEP 0: 기본 데이터
 const DEFAULT_DATA=[
   {keyword:"고조선",data:["고인돌","비파형 동검","위만조선","우거왕","왕검성"]},
   {keyword:"삼국시대",data:["고구려","백제","신라","광개토대왕","근초고왕"]},
@@ -74,18 +73,18 @@ let DATA=[], stats={}, sessionQueue=[], currentQuestion=null, sessionMeta={keywo
 const STORAGE_KEY='kh_quiz_stats_v6';
 const CHO=["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 
-// 유틸리티
+// 유틸
 function sample(arr,n=1){ const copy=arr.slice(); const out=[]; for(let i=0;i<n&&copy.length;i++){ const idx=Math.floor(Math.random()*copy.length); out.push(copy.splice(idx,1)[0]); } return out; }
 function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
 function uniq(arr){ return Array.from(new Set(arr)); }
 function chosungOf(str){ let out=''; for(const ch of str){ const code=ch.charCodeAt(0); if(code>=0xAC00&&code<=0xD7A3){ out+=CHO[Math.floor((code-0xAC00)/588)]||ch; } else if(/[A-Za-z0-9]/.test(ch)){ out+=ch; } else if(ch.trim()===""){ out+=' '; } else out+=ch; } return out.replace(/\s+/g,'').trim(); }
 
-// 로컬스토리지 통계
+// 통계
 function loadStats(){ try{ stats=JSON.parse(localStorage.getItem(STORAGE_KEY))||{}; }catch(e){ stats={}; } }
 function saveStats(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(stats)); }
 function resetStats(){ stats={}; saveStats(); renderMenu(); }
 
-// 메뉴 렌더링
+// 메뉴
 function renderMenu(){
   loadStats();
   document.getElementById('menu').style.display='flex';
@@ -104,7 +103,7 @@ function renderMenu(){
   });
 }
 
-// 세션 큐 생성
+// 세션 큐
 function createSessionQueueForKeyword(keyword){
   const item=DATA.find(d=>d.keyword===keyword); if(!item) return [];
   const questions=[];
@@ -128,7 +127,7 @@ function createSessionQueueRandom(){
       else{
         const correctSet=[val];
         if(item.data.length>1 && Math.random()<0.25) correctSet.push(...sample(item.data.filter(x=>x!==val),1));
-        all.push({keyword:item.keyword,correctSet,type:'match'});
+        all.push({keyword,item.keyword,correctSet,type:'match'});
       }
     });
   });
@@ -136,67 +135,56 @@ function createSessionQueueRandom(){
 }
 
 // 세션 시작
-function startSession(keyword,isRandom){
+function startSession(keyword,isRandom=false){
   sessionQueue=isRandom?createSessionQueueRandom():createSessionQueueForKeyword(keyword);
   sessionMeta={keyword,isRandom};
-  document.getElementById('menu').style.display='none';
-  document.getElementById('quiz').style.display='flex';
-  document.getElementById('backBtn').style.display='inline-block';
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('quiz').style.display = 'flex';
+  document.getElementById('backBtn').style.display = 'inline-block';
   nextQuestion();
 }
 
-// 진행 표시
+// 진행
 function updateProgress(){
-  const left=sessionQueue.length + (currentQuestion?1:0);
+  const left = sessionQueue.length + (currentQuestion?1:0);
   document.getElementById('currentKeyword').textContent=sessionMeta.keyword?`문제: ${sessionMeta.keyword}`:'';
   document.getElementById('progress').textContent=left?`남은 문제: ${left}`:'';
 }
 
 // 다음 문제
 function nextQuestion(){
-  if(sessionQueue.length===0){ 
-    showSessionEnd(); 
-    return; 
-  }
-  currentQuestion=sessionQueue.shift();
+  if(sessionQueue.length === 0){ showSessionEnd(); return; }
+  currentQuestion = sessionQueue.shift();
   updateProgress();
   renderQuestion(currentQuestion);
 }
 
-// 세션 종료 처리
+// 세션 종료
 function showSessionEnd(){
   const quiz=document.getElementById('quiz'); quiz.innerHTML='';
   const msg=document.createElement('div'); msg.className='question'; msg.textContent='모든 문제 완료!'; quiz.appendChild(msg);
   const div=document.createElement('div'); div.className='center';
   const restart=document.createElement('button'); restart.textContent='다시 시작';
   const toMenu=document.createElement('button'); toMenu.textContent='메뉴로 돌아가기';
-  
-  restart.onclick=()=>{ 
-    sessionQueue = sessionMeta.isRandom ? createSessionQueueRandom() : createSessionQueueForKeyword(sessionMeta.keyword);
-    nextQuestion();
-  };
-  
+  restart.onclick=()=>{ sessionQueue=sessionMeta.isRandom?createSessionQueueRandom():createSessionQueueForKeyword(sessionMeta.keyword); nextQuestion(); };
   toMenu.onclick=()=>{ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; };
-  
-  div.appendChild(restart); 
-  div.appendChild(toMenu); 
-  quiz.appendChild(div);
+  div.appendChild(restart); div.appendChild(toMenu); quiz.appendChild(div);
   document.getElementById('progress').textContent='';
 }
 
-// 문제 렌더링
+// 문제 렌더
 function renderQuestion(q){
   const quiz=document.getElementById('quiz'); quiz.innerHTML='';
   if(q.type==='chosung') renderChosung(q);
   else renderMatch(q);
 }
 
+// 초성
 function renderChosung(q){
   const quiz=document.getElementById('quiz'); 
-  const question=document.createElement('div'); question.className='question'; question.textContent=`초성: ${chosungOf(q.val)}`;
-  quiz.appendChild(question);
+  const question=document.createElement('div'); question.className='question'; question.textContent=`초성: ${chosungOf(q.val)}`; quiz.appendChild(question);
   const optionsDiv=document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
-  const opts=shuffle(uniq([q.val].concat(collectDistractors(new Set([q.val]),3))));
+  const opts=shuffle(uniq([q.val].concat(sample(DATA.flatMap(d=>d.data).filter(x=>x!==q.val),3))));
   opts.forEach(opt=>{
     const div=document.createElement('div'); div.className='opt'; div.textContent=opt;
     div.onclick=()=>handleAnswer(optionsDiv,q.keyword,opt===q.val,[div],[q.val]);
@@ -204,31 +192,29 @@ function renderChosung(q){
   });
 }
 
+// 매칭
 function renderMatch(q){
-  const quiz=document.getElementById('quiz');
-  const correctSet=new Set(q.correctSet);
+  const quiz=document.getElementById('quiz'); 
+  const correctSet=new Set(q.correctSet); 
   const isMulti=correctSet.size>1;
-  const question=document.createElement('div'); question.className='question';
-  question.textContent=`${q.keyword}에 알맞은 것은? ${isMulti?'(중복 선택 가능)':''}`;
-  quiz.appendChild(question);
+  const question=document.createElement('div'); question.className='question'; question.textContent=`${q.keyword}에 알맞은 것은? ${isMulti?'(중복 선택 가능)':''}`; quiz.appendChild(question);
   const optionsDiv=document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
-  const opts=shuffle(uniq([...correctSet,...collectDistractors(correctSet,Math.max(0,4-correctSet.size))]));
+  const opts=shuffle(uniq([...correctSet,...sample(DATA.flatMap(d=>d.data).filter(x=>!correctSet.has(x)), Math.max(0,4-correctSet.size))]));
   opts.forEach(opt=>{
     if(isMulti){
       const label=document.createElement('label'); label.className='opt';
       const cb=document.createElement('input'); cb.type='checkbox'; cb.style.marginRight='8px'; label.appendChild(cb);
-      const span=document.createElement('span'); span.textContent=opt; label.appendChild(span);
-      optionsDiv.appendChild(label);
-      cb.onchange=()=>checkMulti(optionsDiv, correctSet,q.keyword);
+      const span=document.createElement('span'); span.textContent=opt; label.appendChild(span); optionsDiv.appendChild(label);
+      cb.onchange=()=>checkMulti(optionsDiv,correctSet,q.keyword);
     }else{
       const div=document.createElement('div'); div.className='opt'; div.textContent=opt;
       div.onclick=()=>handleAnswer(optionsDiv,q.keyword,correctSet.has(opt),[div],Array.from(correctSet));
-      optionsDiv.appendChild(div)
+      optionsDiv.appendChild(div);
     }
   });
 }
 
-// 정답 처리
+// 정답
 function handleAnswer(container,keyword,isCorrect,clicked,correctAnswers){
   Array.from(container.children).forEach(c=>c.classList.add('disabled'));
   clicked.forEach(c=>isCorrect?c.classList.add('correct'):c.classList.add('wrong'));
@@ -237,49 +223,38 @@ function handleAnswer(container,keyword,isCorrect,clicked,correctAnswers){
     if(correctAnswers.includes(text)) c.classList.add('correct');
   });
   updateStats(keyword,isCorrect);
-  showNextButton(container); // 다음 문제 버튼 표시
+  showNextButton(container);
 }
 
+// 다중
 function checkMulti(container,correctSet,keyword){
-  const checked=Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(i=>i.parentElement.querySelector('span').textContent.trim());
+  const checked=Array.from(container.querySelectorAll('input[type=checkbox]:checked'))
+                      .map(i=>i.parentElement.querySelector('span').textContent.trim());
   const checkedSet=new Set(checked);
   const allCorrect=Array.from(correctSet).every(c=>checkedSet.has(c));
   const anyWrong=checked.some(c=>!correctSet.has(c));
-  if(allCorrect || anyWrong){ handleAnswer(container,keyword,allCorrect&&!anyWrong,[],Array.from(correctSet)); }
+  if(allCorrect || anyWrong) handleAnswer(container,keyword,allCorrect&&!anyWrong,[],Array.from(correctSet));
 }
 
-// 다음 문제 버튼
+// 다음 버튼
 function showNextButton(container){
-  const btn=document.createElement('button'); 
-  btn.className='next-btn'; 
-  btn.textContent='다음 문제';
+  const btn=document.createElement('button'); btn.className='next-btn'; btn.textContent='다음 문제';
   btn.onclick=nextQuestion;
   container.appendChild(btn);
 }
 
-// 오답 수집
-function collectDistractors(excludeSet,count){ return sample(DATA.flatMap(d=>d.data).filter(x=>!excludeSet.has(x)),count); }
-
-// 이벤트
-document.getElementById('fileInput').addEventListener('change',async(ev)=>{
-  const f=ev.target.files[0]; if(!f) return; 
-  const text=await f.text(); 
-  try{ const parsed=JSON.parse(text); if(Array.isArray(parsed)){ DATA=parsed.map(i=>({keyword:i.keyword,data:i.data.slice()})); alert('JSON 로드'); renderMenu(); return; } }catch(e){}
-  const csv=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l).map(line=>{
-    const [k,...rest]=line.split(','); const data=(rest.join(',').includes('|')?rest.join(',').split('|'):rest.join(',').split(';')).map(s=>s.trim()).filter(s=>s); return {keyword:k.trim(),data};
-  });
-  if(csv.length){ DATA=csv; alert('CSV 로드'); renderMenu(); return; } alert('파일 인식 불가'); 
-});
-
-document.getElementById('backBtn').onclick=()=>{ if(confirm('세션 종료 후 메뉴로 돌아가시겠어요?')){ renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; } };
-document.getElementById('randomBtn').onclick=()=>startSession('랜덤',true);
-document.getElementById('resetStatsBtn').onclick=()=>{ if(confirm('모든 통계 초기화?')) resetStats(); };
-
-// 통계 업데이트
+// 통계
 function updateStats(keyword,correct){ stats[keyword]=stats[keyword]||{correct:0,total:0}; stats[keyword].total++; if(correct) stats[keyword].correct++; saveStats(); renderMenu(); }
 
 // 초기화
-function init(){ loadStats(); DATA=JSON.parse(JSON.stringify(DEFAULT_DATA)); renderMenu(); }
+function useDefaultData(){ DATA=JSON.parse(JSON.stringify(DEFAULT_DATA)); renderMenu(); }
+function init(){ loadStats(); useDefaultData(); }
+
+// 이벤트
+document.getElementById('backBtn').onclick=()=>{ if(confirm('세션 종료 후 메뉴로 돌아가시겠어요?')) renderMenu(); sessionQueue=[]; currentQuestion=null; sessionMeta={keyword:null,isRandom:false}; };
+document.getElementById('randomBtn').onclick=()=>startSession('랜덤',true);
+document.getElementById('resetStatsBtn').onclick=()=>{ if(confirm('모든 통계 초기화?')) resetStats(); };
+
 init();
 </script>
 </body>
