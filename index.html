@@ -1,111 +1,404 @@
-<!DOCTYPE html>
+<!--
+Korean History Quiz - Single-file app (index.html)
+Drop this file into a GitHub Pages repo (root) as `index.html` and enable Pages (main branch) to publish.
+
+Features implemented in this file:
+- Sample data embedded (DEFAULT_DATA). Also supports loading your own JSON or CSV file via the "Load data" button.
+  * JSON format: [{"keyword":"고조선", "data":["고인돌","비파형 동검", ...]}, ...]
+  * CSV format (simple): each line `keyword,data1|data2|data3` (data items separated by `|` or `;`).
+- Keyword selection menu with per-keyword stats shown (correct/total) stored in localStorage (persistent across sessions on the same browser).
+- Random button that draws problems from all keywords/data.
+- Two question types implemented: 일치 문제 (match) and 초성 문제 (chosung).
+  * Match supports single-correct (radio) and multi-correct (checkbox) problems. Multi-correct problems are marked with "(중복)".
+  * For multi-select: if the user clicks a wrong checkbox, the app immediately reveals the correct answers (correct -> green, wrong -> red) and counts the attempt as incorrect. Only when the user selects exactly the full correct set and no wrong ones is it counted as correct.
+- 초성 문제: shows the initial consonants (초성) of the data item (e.g., "고조선" -> "ㄱㅈㅅ") and multiple choices.
+- Back button to return to the menu / previous screen.
+- Reset stats button to clear accumulated statistics.
+- Mobile responsive layout and accessible buttons.
+
+Limitations / notes:
+- Stats are stored locally (localStorage) — no server-side user tracking.
+- Distractors are sampled from other data in the dataset; no advanced semantic distractor generation.
+
+If you'd like, I can:
+- Extract the `data` into a separate `data.json` file and give you that file content.
+- Add an option to export/import stats or to sync stats to a server.
+
+-->
+
+<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>한능검 퀴즈</title>
-<style>
-  body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background: #f0f4f8; }
-  h1 { text-align: center; }
-  .quiz-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-  .question { font-size: 1.2em; margin-bottom: 15px; }
-  .options { list-style: none; padding: 0; }
-  .options li { margin: 10px 0; }
-  button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; }
-  button.correct { background-color: #4CAF50; color: white; }
-  button.wrong { background-color: #f44336; color: white; }
-  .stats { margin-top: 20px; font-size: 0.9em; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>한국사 능력검정 퀴즈</title>
+  <style>
+    :root{--bg:#fbfbfd;--card:#fff;--accent:#0b63d3;--success:#2e7d32;--danger:#c62828}
+    html,body{height:100%;margin:0;font-family:Inter, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;background:var(--bg);color:#111}
+    .wrap{max-width:900px;margin:0 auto;padding:18px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:1.25rem;margin:0}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    button, label.input-btn{background:var(--card);border:1px solid #ddd;padding:8px 12px;border-radius:8px;font-size:1rem}
+    button:hover{filter:brightness(.98);cursor:pointer}
+    #menu{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+    .kw-btn{min-width:140px;text-align:left;display:flex;flex-direction:column;padding:10px;border-radius:10px;border:1px solid #e6e7ea;background:#fff}
+    .kw-title{font-weight:600}
+    .kw-stats{font-size:.85rem;color:#666}
+    #quiz{margin-top:18px;padding:14px;border-radius:10px;background:var(--card);border:1px solid #e6e7ea;min-height:120px}
+    .question{font-size:1.05rem;margin-bottom:12px}
+    .options{display:flex;flex-direction:column;gap:8px}
+    .opt{padding:8px 10px;border-radius:8px;border:1px solid #ddd;background:#fff}
+    .opt.disabled{opacity:.6;pointer-events:none}
+    .opt.correct{border-color:var(--success);background:rgba(46,125,50,0.06)}
+    .opt.wrong{border-color:var(--danger);background:rgba(198,40,40,0.05)}
+    .meta{margin-top:10px;display:flex;align-items:center;gap:8px}
+    .small{font-size:.9rem;color:#666}
+    .kbd{font-family:monospace;background:#f4f6fb;padding:4px 8px;border-radius:6px}
+    footer{margin-top:18px;color:#777;font-size:.9rem}
+    @media (max-width:480px){.kw-btn{min-width:48%;font-size:.95rem}.controls{flex-direction:column;align-items:stretch}button,label.input-btn{width:100%}}
+  </style>
 </head>
 <body>
-<h1>한능검 퀴즈</h1>
-<div class="quiz-container">
-  <div class="question" id="question">문제 로딩 중...</div>
-  <ul class="options" id="options"></ul>
-  <div class="stats" id="stats"></div>
-  <button onclick="nextQuestion()">다음 문제</button>
-</div>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>한국사 능력검정 퀴즈</h1>
+        <div class="small">GitHub Pages용 정적 퀴즈 (로컬에선 파일 열기 대신 간단히 서버로 서빙하세요)</div>
+      </div>
+      <div class="controls">
+        <label class="input-btn">Load data <input id="fileInput" type="file" accept="application/json,text/csv" style="display:none"></label>
+        <button id="randomBtn">랜덤 문제</button>
+        <button id="resetStatsBtn">통계 초기화</button>
+      </div>
+    </header>
 
-<script>
-const quizData = [
-  {keyword: "고조선", answer: "고인돌"},
-  {keyword: "위만조선", answer: "위만"},
-  {keyword: "왕검성", answer: "왕검성"},
-  {keyword: "비파형 동검", answer: "비파형 동검"},
-  {keyword: "부여", answer: "온조"},
-  {keyword: "백제", answer: "고이왕"},
-  {keyword: "고구려", answer: "주몽"},
-  {keyword: "신라", answer: "박혁거세"}
-];
+    <main>
+      <div id="menu"></div>
 
-// LocalStorage에서 기록 가져오기
-let stats = JSON.parse(localStorage.getItem("quizStats")) || {correct:0, wrong:0};
+      <div id="quiz" style="display:none"></div>
 
-function saveStats() {
-  localStorage.setItem("quizStats", JSON.stringify(stats));
-  document.getElementById("stats").textContent = `맞힌 문제: ${stats.correct}개, 틀린 문제: ${stats.wrong}개`;
-}
+      <div class="meta">
+        <button id="backBtn" style="display:none">이전으로</button>
+        <div id="currentKeyword" class="small"></div>
+      </div>
+    </main>
 
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-}
+    <footer>
+      <div>데이터 파일 포맷: JSON (권장) 또는 CSV(간단지원). CSV 예: <span class="kbd">고조선,고인돌|비파형 동검|위만조선</span></div>
+    </footer>
+  </div>
 
-// Type2 보기 생성: 정답 포함 + 나머지 3개 랜덤
-function generateOptions(answer) {
-  const otherOptions = quizData.map(q => q.answer).filter(a => a !== answer);
-  shuffleArray(otherOptions);
-  const options = [answer, ...otherOptions.slice(0,3)];
-  shuffleArray(options);
-  return options;
-}
+  <script>
+    // ---------------------------- Sample data (embedded) ----------------------------
+    const DEFAULT_DATA = [
+      { keyword: "고조선", data: ["고인돌", "비파형 동검", "위만조선", "우거왕", "왕검성"] },
+      { keyword: "삼국시대", data: ["고구려", "백제", "신라", "광개토대왕", "근초고왕"] },
+      { keyword: "조선시대", data: ["세종대왕", "훈민정음", "붕당", "영정법", "사화"] }
+    ];
 
-let currentQuestion;
+    // ---------------------------- State and storage ----------------------------
+    let DATA = []; // loaded dataset
+    let stats = {}; // { keyword: {correct: n, total: m} }
 
-function loadQuestion() {
-  const randomIndex = Math.floor(Math.random() * quizData.length);
-  currentQuestion = quizData[randomIndex];
-  document.getElementById("question").textContent = `${currentQuestion.keyword}와 관련된 것은?`;
-  
-  const options = generateOptions(currentQuestion.answer);
-  
-  const optionsContainer = document.getElementById("options");
-  optionsContainer.innerHTML = "";
-  options.forEach(opt => {
-    const li = document.createElement("li");
-    const btn = document.createElement("button");
-    btn.textContent = opt;
-    btn.onclick = () => checkAnswer(opt, btn);
-    li.appendChild(btn);
-    optionsContainer.appendChild(li);
-  });
-}
+    const STORAGE_KEY = 'kh_quiz_stats_v1';
 
-function checkAnswer(selected, btn) {
-  const buttons = document.querySelectorAll("#options button");
-  buttons.forEach(b => b.disabled = true);
+    function loadStats(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        stats = raw ? JSON.parse(raw) : {};
+      }catch(e){ stats = {}; }
+    }
+    function saveStats(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); }
+    function resetStats(){ stats = {}; saveStats(); renderMenu(); }
 
-  if(selected === currentQuestion.answer){
-    btn.classList.add("correct");
-    stats.correct++;
-  } else {
-    btn.classList.add("wrong");
-    stats.wrong++;
-    buttons.forEach(b => {
-      if(b.textContent === currentQuestion.answer) b.classList.add("correct");
+    // ---------------------------- Utility helpers ----------------------------
+    function sample(arr, n=1){
+      const copy = arr.slice();
+      const out = [];
+      for(let i=0;i<n && copy.length;i++){
+        const idx = Math.floor(Math.random()*copy.length);
+        out.push(copy.splice(idx,1)[0]);
+      }
+      return out;
+    }
+
+    function uniq(arr){ return Array.from(new Set(arr)); }
+
+    // 초성 추출
+    const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+    function chosungOf(str){
+      let out = '';
+      for(const ch of str){
+        const code = ch.charCodeAt(0);
+        if(code >= 0xAC00 && code <= 0xD7A3){
+          const index = Math.floor((code - 0xAC00) / 588);
+          out += CHO[index] || ch;
+        } else if (/[A-Za-z0-9]/.test(ch)){
+          out += ch; // keep ascii
+        } else if (ch.trim()===""){
+          out += ' ';
+        } else {
+          out += ch;
+        }
+      }
+      // remove repeated spaces
+      return out.replace(/\s+/g,'').trim();
+    }
+
+    // ---------------------------- Data loading (file/embedded) ----------------------------
+    function useDefaultData(){ DATA = JSON.parse(JSON.stringify(DEFAULT_DATA)); renderMenu(); }
+
+    function parseCSV(text){
+      const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+      const out = [];
+      for(const line of lines){
+        // split first comma only
+        const parts = line.split(',');
+        if(parts.length < 2) continue;
+        const keyword = parts[0].trim();
+        const rest = parts.slice(1).join(',').trim();
+        const items = rest.includes('|') ? rest.split('|') : (rest.includes(';') ? rest.split(';') : rest.split('|'));
+        const data = items.map(s=>s.trim()).filter(s=>s);
+        if(keyword && data.length) out.push({keyword, data});
+      }
+      return out;
+    }
+
+    document.getElementById('fileInput').addEventListener('change', async (ev)=>{
+      const f = ev.target.files[0];
+      if(!f) return;
+      const text = await f.text();
+      try{
+        const parsed = JSON.parse(text);
+        if(Array.isArray(parsed)){
+          DATA = parsed.map(item => ({keyword: item.keyword, data: item.data.slice()}));
+          alert('JSON 데이터 로드 완료');
+          renderMenu();
+          return;
+        }
+      }catch(e){
+        // try CSV
+        const csv = parseCSV(text);
+        if(csv.length){ DATA = csv; alert('CSV 데이터 로드 완료'); renderMenu(); return; }
+      }
+      alert('파일 포맷을 인식하지 못했습니다. JSON이나 CSV (keyword,data1|data2|...) 를 사용하세요.');
     });
-  }
-  saveStats();
-}
 
-function nextQuestion() {
-  loadQuestion();
-}
+    // ---------------------------- UI rendering: menu ----------------------------
+    function renderMenu(){
+      loadStats();
+      document.getElementById('quiz').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+      document.getElementById('backBtn').style.display = 'none';
+      document.getElementById('currentKeyword').textContent = '';
 
-saveStats();
-loadQuestion();
-</script>
+      const menu = document.getElementById('menu');
+      menu.innerHTML = '';
+      if(!DATA || !DATA.length){ menu.innerHTML = '<div class="small">로드된 데이터가 없습니다. 상단의 Load data로 JSON/CSV 업로드하거나 기본 예제를 사용하세요.</div>'; return; }
+      DATA.forEach(item=>{
+        if(!stats[item.keyword]) stats[item.keyword] = {correct:0,total:0};
+        const btn = document.createElement('button');
+        btn.className = 'kw-btn';
+        btn.innerHTML = `<div class="kw-title">${item.keyword}</div><div class="kw-stats">${stats[item.keyword].correct}/${stats[item.keyword].total}</div>`;
+        btn.addEventListener('click', () => startQuiz(item.keyword));
+        menu.appendChild(btn);
+      });
+    }
+
+    // ---------------------------- Quiz flow ----------------------------
+    let current = { keyword: null, item: null, correctSet: null, mode: null }; // mode: 'match'|'chosung'
+
+    function startQuiz(keyword){
+      current.keyword = keyword;
+      document.getElementById('menu').style.display = 'none';
+      document.getElementById('quiz').style.display = 'block';
+      document.getElementById('backBtn').style.display = 'inline-block';
+      document.getElementById('currentKeyword').textContent = `문제: ${keyword}`;
+      generateQuestion(keyword);
+    }
+
+    function generateRandomQuestion(){
+      // pick random item from all data
+      const all = DATA.flatMap(d => d.data.map(x => ({keyword: d.keyword, value: x})));
+      if(!all.length) return;
+      const picked = sample(all,1)[0];
+      const itemObj = DATA.find(d => d.keyword === picked.keyword);
+      current.keyword = picked.keyword;
+      current.item = itemObj;
+      document.getElementById('menu').style.display = 'none';
+      document.getElementById('quiz').style.display = 'block';
+      document.getElementById('backBtn').style.display = 'inline-block';
+      document.getElementById('currentKeyword').textContent = `랜덤 문제`;
+      // pick question type randomly
+      if(Math.random() < 0.5) makeChosungQuestion(itemObj, picked.value);
+      else makeMatchQuestion(itemObj, picked.value);
+    }
+
+    function generateQuestion(keyword){
+      const itemObj = DATA.find(d=>d.keyword === keyword);
+      if(!itemObj) return;
+      current.item = itemObj;
+      // pick type at random
+      if(Math.random() < 0.5) makeMatchQuestion(itemObj);
+      else makeChosungQuestion(itemObj);
+    }
+
+    // helper to collect distractors from whole dataset
+    function collectDistractors(excludeSet, count){
+      const pool = DATA.flatMap(d => d.data).filter(x => !excludeSet.has(x));
+      return sample(pool, Math.min(count, pool.length));
+    }
+
+    function makeMatchQuestion(itemObj, forcedValue=null){
+      const quiz = document.getElementById('quiz');
+      quiz.innerHTML = '';
+      const question = document.createElement('div');
+      question.className = 'question';
+
+      // decide number of correct answers (1..min(3, itemObj.data.length)) randomly
+      const maxCorrect = Math.min(3, itemObj.data.length);
+      const numCorrect = Math.random() < 0.25 && maxCorrect > 1 ? Math.min(2, maxCorrect) : 1; // 25% chance to be multi if available
+
+      // pick correct set
+      const correctSet = new Set(sample(itemObj.data, numCorrect));
+      current.correctSet = correctSet;
+      const isMulti = correctSet.size > 1;
+
+      question.textContent = `${itemObj.keyword}에 알맞은 것은? ${isMulti ? '(중복)' : ''}`;
+      quiz.appendChild(question);
+
+      // prepare options: include correct answers + distractors to make up to 4 options
+      const opts = Array.from(correctSet);
+      const need = Math.max(0, 4 - opts.length);
+      const distractors = collectDistractors(new Set(opts), need);
+      const allOpts = uniq(opts.concat(distractors)).slice(0,4);
+      // shuffle
+      for(let i=allOpts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [allOpts[i],allOpts[j]]=[allOpts[j],allOpts[i]]; }
+
+      const optionsDiv = document.createElement('div'); optionsDiv.className='options';
+      quiz.appendChild(optionsDiv);
+
+      if(isMulti){
+        // checkboxes
+        const info = document.createElement('div'); info.className='small'; info.textContent = '정답인 항목을 모두 선택하세요.'; quiz.appendChild(info);
+        allOpts.forEach(optText => {
+          const label = document.createElement('label'); label.className='opt';
+          const cb = document.createElement('input'); cb.type='checkbox'; cb.style.marginRight='8px';
+          label.appendChild(cb);
+          const span = document.createElement('span'); span.textContent = optText; label.appendChild(span);
+          optionsDiv.appendChild(label);
+
+          cb.addEventListener('change', ()=>{
+            if(cb.checked && !correctSet.has(optText)){
+              // immediate reveal: wrong chosen
+              revealMultiResult(false, optionsDiv, correctSet, optText);
+            } else {
+              // if user selected all corrects and nothing else
+              const checked = Array.from(optionsDiv.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.parentElement.textContent.trim());
+              const checkedSet = new Set(checked);
+              const allCorrectSelected = Array.from(correctSet).every(c => checkedSet.has(c));
+              const anyWrongSelected = checked.some(s => !correctSet.has(s));
+              if(allCorrectSelected && !anyWrongSelected && checked.length === correctSet.size){
+                revealMultiResult(true, optionsDiv, correctSet);
+              }
+            }
+          });
+        });
+
+      } else {
+        // single choice - radio buttons (or clickable divs)
+        allOpts.forEach(optText => {
+          const div = document.createElement('div'); div.className='opt'; div.textContent = optText;
+          optionsDiv.appendChild(div);
+          div.addEventListener('click', ()=>{
+            const isCorrect = correctSet.has(optText);
+            // show colors
+            Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
+            if(isCorrect){ div.classList.add('correct'); updateStats(itemObj.keyword, true); }
+            else { div.classList.add('wrong'); // highlight correct
+              Array.from(optionsDiv.children).forEach(c=>{ if(correctSet.has(c.textContent.trim())) c.classList.add('correct'); });
+              updateStats(itemObj.keyword, false);
+            }
+          });
+        });
+      }
+
+    }
+
+    function revealMultiResult(isCorrect, optionsDiv, correctSet, wrongChosen=null){
+      Array.from(optionsDiv.children).forEach(c => {
+        const txt = c.textContent.trim();
+        c.classList.add('disabled');
+        if(correctSet.has(txt)) c.classList.add('correct');
+        if(wrongChosen && txt === wrongChosen) c.classList.add('wrong');
+      });
+      updateStats(current.item.keyword, isCorrect);
+    }
+
+    function makeChosungQuestion(itemObj, forcedValue=null){
+      const quiz = document.getElementById('quiz'); quiz.innerHTML='';
+      const question = document.createElement('div'); question.className='question';
+
+      // pick one correct answer from itemObj.data
+      const correct = forcedValue || sample(itemObj.data,1)[0];
+      const chos = chosungOf(correct);
+      question.textContent = `초성: ${chos}`;
+      quiz.appendChild(question);
+
+      // prepare options: correct + 3 distractors
+      const opts = [correct];
+      const dis = collectDistractors(new Set(opts), 3);
+      const allOpts = uniq(opts.concat(dis)).slice(0,4);
+      // shuffle
+      for(let i=allOpts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [allOpts[i],allOpts[j]]=[allOpts[j],allOpts[i]]; }
+
+      const optionsDiv = document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
+      allOpts.forEach(opt => {
+        const div = document.createElement('div'); div.className='opt'; div.textContent = opt;
+        optionsDiv.appendChild(div);
+        div.addEventListener('click', ()=>{
+          Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
+          if(opt === correct){ div.classList.add('correct'); updateStats(itemObj.keyword, true); }
+          else { div.classList.add('wrong'); Array.from(optionsDiv.children).forEach(c=>{ if(c.textContent.trim() === correct) c.classList.add('correct'); }); updateStats(itemObj.keyword, false); }
+        });
+      });
+    }
+
+    function updateStats(keyword, correct){
+      if(!stats[keyword]) stats[keyword] = {correct:0,total:0};
+      if(correct) stats[keyword].correct++;
+      stats[keyword].total++;
+      saveStats();
+      // update menu display (if visible)
+      const menu = document.getElementById('menu');
+      if(menu.style.display !== 'none') renderMenu();
+      else{
+        // update shown keyword count (if in menu hidden)
+        renderMenu();
+      }
+    }
+
+    // ---------------------------- Buttons ----------------------------
+    document.getElementById('backBtn').addEventListener('click', ()=>{
+      renderMenu();
+    });
+
+    document.getElementById('randomBtn').addEventListener('click', ()=>{
+      generateRandomQuestion();
+    });
+
+    document.getElementById('resetStatsBtn').addEventListener('click', ()=>{
+      if(confirm('모든 통계를 초기화하시겠어요?')){ resetStats(); }
+    });
+
+    // ---------------------------- Init ----------------------------
+    function init(){
+      loadStats();
+      useDefaultData();
+    }
+
+    init();
+  </script>
 </body>
 </html>
