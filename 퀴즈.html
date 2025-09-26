@@ -1,0 +1,95 @@
+import random
+import pandas as pd
+
+# 엑셀 불러오기
+df = pd.read_excel("fbfd2501-4759-4a72-96a6-beb58da701ea.xlsx")
+
+# quiz_data 만들기 (dict 구조: {keyword: [data1, data2, ...]})
+quiz_data = {}
+for _, row in df.iterrows():
+    keyword = row["keyword"]
+    data = str(row["data"]).split(",") if "," in str(row["data"]) else [str(row["data"])]
+    data = [d.strip() for d in data]  # 공백 제거
+    if keyword not in quiz_data:
+        quiz_data[keyword] = []
+    quiz_data[keyword].extend(data)
+
+# 초성 변환 함수
+def get_initials(word):
+    CHOSUNG_LIST = [
+        'ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ',
+        'ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'
+    ]
+    result = ""
+    for char in word:
+        if '가' <= char <= '힣':
+            code = ord(char) - ord('가')
+            chosung = code // 588
+            result += CHOSUNG_LIST[chosung]
+        else:
+            result += char
+    return result
+
+# 문제 출제 함수
+def ask_question():
+    q_type = random.choice(["초성문제", "일치문제"])  # 문제 유형 랜덤 선택
+    keyword = random.choice(list(quiz_data.keys()))
+    datas = quiz_data[keyword]
+
+    if q_type == "초성문제":
+        answer = random.choice(datas)
+        initials = get_initials(answer)
+        print(f"[초성문제] 다음 초성에 해당하는 것은? {initials}")
+        user = input("👉 정답 입력: ")
+        if user.strip() == answer:
+            print("✅ 정답!")
+            return True
+        else:
+            print(f"❌ 오답! 정답은 {answer}")
+            return False
+
+    else:  # 일치문제
+        # 정답 후보 복수 가능
+        correct_answers = random.sample(datas, random.randint(1, len(datas)))
+        options = correct_answers.copy()
+
+        # 오답 후보 섞기
+        while len(options) < 4:
+            wrong_keyword = random.choice(list(quiz_data.keys()))
+            wrong_data = random.choice(quiz_data[wrong_keyword])
+            if wrong_data not in options:
+                options.append(wrong_data)
+
+        random.shuffle(options)
+
+        print(f"[일치문제] '{keyword}'에 해당하는 것은 무엇일까요?")
+        for i, opt in enumerate(options, 1):
+            print(f"{i}. {opt}")
+
+        user_input = input("👉 번호 입력 (복수 선택 시 콤마로 구분): ")
+        try:
+            user_choices = [options[int(i.strip()) - 1] for i in user_input.split(",")]
+        except:
+            print("⚠️ 입력 오류")
+            return False
+
+        if set(user_choices) == set(correct_answers):
+            print("✅ 정답!")
+            return True
+        else:
+            print(f"❌ 오답! 정답은 {', '.join(correct_answers)}")
+            return False
+
+# 실행
+score = 0
+total = 0
+while True:
+    result = ask_question()
+    total += 1
+    if result:
+        score += 1
+    print(f"📊 현재 정답률: {score}/{total} ({score/total*100:.1f}%)")
+
+    cont = input("\n계속 하시겠습니까? (y/n): ")
+    if cont.lower() != "y":
+        break
