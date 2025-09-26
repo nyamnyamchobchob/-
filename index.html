@@ -222,57 +222,118 @@ function renderQuestion(q){
   else renderMatchQuestion(q);
 }
 
+// ---------------------------- 초성 문제 ----------------------------
 function renderChosungQuestion(q){
   const quiz=document.getElementById('quiz');
   const question=document.createElement('div'); question.className='question'; quiz.appendChild(question);
   question.textContent=`초성: ${chosungOf(q.value)}`;
 
-  const opts=[q.value]; const dis=collectDistractors(new Set(opts),3); const allOpts=uniq(opts.concat(dis)).slice(0,4); shuffleInPlace(allOpts);
-  const optionsDiv=document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
+  const opts=[q.value]; 
+  const dis=collectDistractors(new Set(opts),3); 
+  const allOpts=uniq(opts.concat(dis)).slice(0,4); 
+  shuffleInPlace(allOpts);
+
+  const optionsDiv=document.createElement('div'); optionsDiv.className='options'; 
+  quiz.appendChild(optionsDiv);
 
   allOpts.forEach(opt=>{
     const div=document.createElement('div'); div.className='opt'; div.textContent=opt; optionsDiv.appendChild(div);
     div.addEventListener('click',()=>{
       Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-      if(opt===q.value){ div.classList.add('correct'); updateStats(q.keyword,true); }
-      else{ div.classList.add('wrong'); Array.from(optionsDiv.children).forEach(c=>{ if(c.textContent===q.value) c.classList.add('correct'); }); updateStats(q.keyword,false); }
-      setTimeout(nextQuestion,900);
+      if(opt===q.value){ 
+        div.classList.add('correct'); 
+        updateStats(q.keyword,true); 
+      } else { 
+        div.classList.add('wrong'); 
+        Array.from(optionsDiv.children).forEach(c=>{
+          if(c.textContent===q.value) c.classList.add('correct'); 
+        }); 
+        updateStats(q.keyword,false); 
+      }
+
+      // 다음 문제 버튼 생성
+      const nextBtn=document.createElement('button');
+      nextBtn.textContent='다음 문제';
+      nextBtn.style.marginTop='12px';
+      nextBtn.addEventListener('click', nextQuestion);
+      quiz.appendChild(nextBtn);
     });
   });
 }
 
+// ---------------------------- 매칭 문제 ----------------------------
 function renderMatchQuestion(q){
-  const quiz=document.getElementById('quiz'); const question=document.createElement('div'); question.className='question'; quiz.appendChild(question);
-  const correctSet=new Set(q.correctSet); const isMulti=correctSet.size>1;
+  const quiz=document.getElementById('quiz'); 
+  const question=document.createElement('div'); question.className='question'; quiz.appendChild(question);
+  const correctSet=new Set(q.correctSet); 
+  const isMulti=correctSet.size>1;
   question.textContent=`${q.keyword}에 알맞은 것은? ${isMulti?'(중복 선택 가능)':''}`;
   const optionsDiv=document.createElement('div'); optionsDiv.className='options'; quiz.appendChild(optionsDiv);
-  const opts=Array.from(correctSet); const need=Math.max(0,4-opts.length); const distractors=collectDistractors(correctSet,need);
-  const allOpts=uniq(opts.concat(distractors)).slice(0,4); shuffleInPlace(allOpts);
+  const opts=Array.from(correctSet); 
+  const need=Math.max(0,4-opts.length); 
+  const distractors=collectDistractors(correctSet,need);
+  const allOpts=uniq(opts.concat(distractors)).slice(0,4); 
+  shuffleInPlace(allOpts);
 
-  allOpts.forEach(opt=>{
-    if(isMulti){
+  if(isMulti){
+    allOpts.forEach(opt=>{
       const label=document.createElement('label'); label.className='opt';
       const cb=document.createElement('input'); cb.type='checkbox'; cb.style.marginRight='8px'; label.appendChild(cb);
       const span=document.createElement('span'); span.textContent=opt; label.appendChild(span);
       optionsDiv.appendChild(label);
-      cb.addEventListener('change',()=>{
-        const checked=Array.from(optionsDiv.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.parentElement.textContent.trim());
-        const checkedSet=new Set(checked);
-        const allCorrectSelected=Array.from(correctSet).every(c=>checkedSet.has(c));
-        const anyWrongSelected=checked.some(s=>!correctSet.has(s));
-        if(allCorrectSelected&&!anyWrongSelected){ Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled')); Array.from(optionsDiv.children).forEach(c=>{ if(correctSet.has(c.textContent.trim())) c.classList.add('correct'); }); updateStats(q.keyword,true); setTimeout(nextQuestion,900); }
-        else if(anyWrongSelected){ Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled')); Array.from(optionsDiv.children).forEach(c=>{ if(correctSet.has(c.textContent.trim())) c.classList.add('correct'); if(checkedSet.has(c.textContent.trim())&&!correctSet.has(c.textContent.trim())) c.classList.add('wrong'); }); updateStats(q.keyword,false); setTimeout(nextQuestion,900); }
+    });
+
+    const checkBtn=document.createElement('button');
+    checkBtn.textContent='정답 확인';
+    checkBtn.style.marginTop='12px';
+    quiz.appendChild(checkBtn);
+
+    checkBtn.addEventListener('click',()=>{
+      const checked=Array.from(optionsDiv.querySelectorAll('input[type=checkbox]'))
+                          .filter(i=>i.checked).map(i=>i.parentElement.textContent.trim());
+      const checkedSet=new Set(checked);
+      const allCorrectSelected=Array.from(correctSet).every(c=>checkedSet.has(c));
+      const anyWrongSelected=checked.some(s=>!correctSet.has(s));
+
+      Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
+      Array.from(optionsDiv.children).forEach(c=>{
+        const text=c.textContent.trim();
+        if(correctSet.has(text)) c.classList.add('correct');
+        if(checkedSet.has(text) && !correctSet.has(text)) c.classList.add('wrong');
       });
-    }else{
+
+      updateStats(q.keyword, allCorrectSelected && !anyWrongSelected);
+
+      const nextBtn=document.createElement('button');
+      nextBtn.textContent='다음 문제';
+      nextBtn.style.marginTop='12px';
+      nextBtn.addEventListener('click', nextQuestion);
+      quiz.appendChild(nextBtn);
+    });
+  } else {
+    allOpts.forEach(opt=>{
       const div=document.createElement('div'); div.className='opt'; div.textContent=opt; optionsDiv.appendChild(div);
       div.addEventListener('click',()=>{
         Array.from(optionsDiv.children).forEach(c=>c.classList.add('disabled'));
-        if(correctSet.has(opt)){ div.classList.add('correct'); updateStats(q.keyword,true); }
-        else{ div.classList.add('wrong'); Array.from(optionsDiv.children).forEach(c=>{ if(correctSet.has(c.textContent.trim())) c.classList.add('correct'); }); updateStats(q.keyword,false); }
-        setTimeout(nextQuestion,900);
+        if(correctSet.has(opt)){ 
+          div.classList.add('correct'); 
+          updateStats(q.keyword,true); 
+        } else { 
+          div.classList.add('wrong'); 
+          Array.from(optionsDiv.children).forEach(c=>{
+            if(correctSet.has(c.textContent.trim())) c.classList.add('correct');
+          }); 
+          updateStats(q.keyword,false); 
+        }
+
+        const nextBtn=document.createElement('button');
+        nextBtn.textContent='다음 문제';
+        nextBtn.style.marginTop='12px';
+        nextBtn.addEventListener('click', nextQuestion);
+        quiz.appendChild(nextBtn);
       });
-    }
-  });
+    });
+  }
 }
 
 // ---------------------------- 옵션 수집 ----------------------------
