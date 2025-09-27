@@ -147,27 +147,47 @@ function showSessionEnd(){
 }
 
 // ===== CSV/JSON 업로드 =====
-document.getElementById('fileInput').addEventListener('change',async(ev)=>{
-  const f=ev.target.files[0]; if(!f) return;
-  const text=await f.text();
+document.getElementById('fileInput').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const text = await f.text();
 
-  try{
-    const parsed=JSON.parse(text);
-    if(Array.isArray(parsed)){
-      DATA=parsed.map(i=>({keyword:i.keyword,data:i.data.slice()}));
-      alert('JSON 로드 완료');renderMenu();return;
+  try {
+    // JSON 처리
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      DATA = parsed.map(i => ({ keyword: i.keyword, data: i.data.slice() }));
+      alert('JSON 로드 완료');
+      renderMenu();
+      return;
     }
-  }catch(e){
-    const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-    const csvData=lines.map(line=>{
-      const [keyword,items]=line.split(',');
-      if(!keyword||!items)return null;
-      return {keyword:keyword.trim(),data:items.split('|').map(s=>s.trim()).filter(s=>s)};
-    }).filter(Boolean);
-    if(csvData.length){DATA=csvData;alert('CSV 로드 완료');renderMenu();return;}
+  } catch (e) {
+    // CSV 처리
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+    const csvData = lines.map(line => {
+      const parts = line.split(',');
+      const keyword = parts[0].trim();
+      const items = parts.slice(1).join(','); // 뒤에 있는 모든 걸 합침
+      let data = [];
+      if (items.includes('|')) {
+        data = items.split('|').map(s => s.trim());
+      } else {
+        data = parts.slice(1).map(s => s.trim());
+      }
+      return { keyword, data };
+    }).filter(d => d.keyword && d.data.length);
+
+    if (csvData.length) {
+      DATA = csvData;
+      alert('CSV 로드 완료');
+      renderMenu();
+      return;
+    }
   }
+
   alert('파일 형식 인식 실패');
 });
+
 
 // 랜덤 시작 & 통계 초기화
 document.getElementById('randomBtn').onclick=()=>startSession('랜덤',true);
@@ -180,3 +200,4 @@ renderMenu();
 
 </body>
 </html>
+
